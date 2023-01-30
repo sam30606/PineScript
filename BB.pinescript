@@ -1,0 +1,266 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sam30606
+
+//@version=5
+// # ========================================================================= #
+// #                   |   STRATEGY  |
+// # ========================================================================= #
+strategy("12-BB", shorttitle="12-BB", overlay=true , default_qty_type=strategy.percent_of_equity, default_qty_value=100, initial_capital=10000)
+
+// # ========================================================================= #
+// #                   |   STRATEGY  |
+// # ========================================================================= #
+
+// # ========================================================================= #
+// #                   |   Average Directional Index  |
+// # ========================================================================= #
+var groupADX = "Average Directional Index Settings"
+
+enableADX = input.bool(1, title = "Enable ADX?", group = groupADX) 
+timeADX = input.timeframe('5', "Timeframe", group=groupADX)
+lenADX = input(14, title="ADX Smoothing", group=groupADX)
+lenDI = input(14, title="DI Length", group=groupADX)
+lowestADX = input.float(32, title='ADX Lowest', step = 0.1, group=groupADX)
+
+dirmov(_len) =>
+	up = ta.change(high)
+	down = -ta.change(low)
+	plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
+	minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+	truerange = ta.rma(ta.tr, _len)
+	plus = fixnan(100 * ta.rma(plusDM, _len) / truerange)
+	minus = fixnan(100 * ta.rma(minusDM, _len) / truerange)
+	[plus, minus]
+adx(lenDI, lenADX) =>
+	[plus, minus] = dirmov(lenDI)
+	sum = plus + minus
+	adx = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), lenADX)
+sig = request.security(syminfo.tickerid, timeADX, adx(lenDI, lenADX))
+// # ========================================================================= #
+// #                   |   Average Directional Index  |
+// # ========================================================================= #
+
+// # ========================================================================= #
+// #                   |   Volume Flow Indicator [LazyBear]  |
+// # ========================================================================= #
+// @author LazyBear
+var groupVFI = "Volume Flow Indicator Settings"
+
+enableVFI = input.bool(1, title = "Enable VFI?", group = groupVFI) 
+lengthVFI = input(130, title='VFI length', group = groupVFI)
+coef = input(1, group = groupVFI)
+vcoef = input(3.4, title='Max. vol. cutoff', group = groupVFI)
+smoothVFI = input(false, group = groupVFI)
+
+VFIma(x, y) =>
+    sma_1 = ta.sma(x, y)
+    smoothVFI ? sma_1 : x
+
+typical = hlc3
+inter = math.log(typical) - math.log(typical[1])
+vinter = ta.stdev(inter, 30)
+cutoff = coef * vinter * close
+vave = ta.sma(volume, lengthVFI)[1]
+vmax = vave * vcoef
+vc = volume < vmax ? volume : vmax  //min( volume, vmax )
+mf = typical - typical[1]
+iff_1 = mf < -cutoff ? -vc : 0
+vcp = mf > cutoff ? vc : iff_1
+
+vfi = VFIma(math.sum(vcp, lengthVFI) / vave, 3)
+
+//plot(vfi, title='vfi', color=color.new(color.green, 0), linewidth=2)
+// # ========================================================================= #
+// #                   |   Volume Flow Indicator [LazyBear]  |
+// # ========================================================================= #
+
+// # ========================================================================= #
+// #                   |   ATR Bands  |
+// # ========================================================================= #
+var groupATR = "ATR Bands Settings"
+
+// Inputs
+atrPeriod = input.int(title='ATR Period', defval=14, minval=1, group = groupATR)
+srcUpper = input(title='Source Upper', defval=close, inline = "ATRSource", group = groupATR)
+srcLower = input(title='Source Lower', defval=close, inline = "ATRSource",group = groupATR)
+atrMultiplierUpper = input.float(title='ATR Multiplier Upper', defval=3, inline = "ATRMult",group = groupATR)
+atrMultiplierLower = input.float(title='ATR Multiplier Lower', defval=3, inline = "ATRMult",group = groupATR)
+
+// ATR
+atr = ta.atr(atrPeriod)
+
+// Plotting
+plot(srcUpper + atr * atrMultiplierUpper, color=color.new(color.green, 0))
+plot(srcLower - atr * atrMultiplierLower, color=color.new(color.red, 0))
+// # ========================================================================= #
+// #                   |   ATR Bands  |
+// # ========================================================================= #
+
+// # ========================================================================= #
+// #                   |   BB  |
+// # ========================================================================= #
+var groupBB = "BB Settings"
+
+source = input(defval=close, title="Source", group = groupBB)
+length = input.int(20, minval=1, group = groupBB)
+mult = input.float(2.0, minval=0.001, maxval=50, group = groupBB)
+basis = ta.sma(source, length)
+dev = mult * ta.stdev(source, length)
+upper = basis + dev
+lower = basis - dev
+buyEntry = ta.crossover(source, lower)
+sellEntry = ta.crossunder(source, upper)
+
+p1 = plot(upper, "Upper", color=#2962FF)
+p2 = plot(lower, "Lower", color=#2962FF)
+fill(p1, p2, title = "Background", color=color.rgb(33, 150, 243, 95))
+
+buyBB = ta.crossover(source, lower)
+sellBB = ta.crossunder(source, upper)
+// # ========================================================================= #
+// #                   |   BB  |
+// # ========================================================================= #
+
+var entryPrice = 0.0
+var priceLimit = 0.0
+var priceStop = 0.0
+var tradeDay = false
+var groupBackTest ="Back Test Settings"
+var time_now = 0
+var orderQty = 0.0
+fromYear = input.int(defval=2000, title='From Year', minval=2000, inline = "BTFrom", group=groupBackTest)
+fromMomth = input.int(defval=1, title='From Month', minval=1, maxval=12, inline = "BTFrom", group=groupBackTest)
+fromDay = input.int(defval=1, title='From Day', minval=1, maxval=31, inline = "BTFrom", group=groupBackTest)
+toYear = input.int(defval=2300, title='To Year', minval=2020, inline = "BTTo", group=groupBackTest)
+toMomth = input.int(defval=1, title='To Month', minval=1, maxval=12, inline = "BTTo", group=groupBackTest)
+toDay = input.int(defval=1, title='To Day', minval=1, maxval=31, inline = "BTTo", group=groupBackTest)
+timeStart = timestamp(fromYear, fromMomth, fromDay, 00, 00)
+timeFinish = timestamp(toYear, toMomth, toDay, 23, 59)
+window()=>time>=timeStart and time <= timeFinish ? true : false
+
+var groupTrade = "Trade Settings"
+
+buySLMeth = input.session(defval = "%", title = "Buy Stop Loss Method", options = ["%", "ATR", "tick"], inline = "BuySL", group = groupTrade) 
+sellSLMeth = input.session(defval = "%", title = "Sell Stop Loss Method", options = ["%", "ATR", "tick"], inline = "SellSL", group = groupTrade)
+buyTPMeth = input.session(defval = "%", title = "Buy Take Profit Method", options = ["%", "ATR", "tick", "R/R"], inline = "BuyTP", group = groupTrade) 
+sellTPMeth = input.session(defval = "%", title = "Sell Take Profit Method", options = ["%", "ATR", "tick", "R/R"], inline = "SellTP", group = groupTrade)
+
+buySLPer = input.float(defval = 1 , title = "Buy Stop Loss %", minval = 0 , step = 0.01 , inline = "BuySL", group = groupTrade)
+sellSLPer = input.float(defval = 1 , title = "Sell Stop Loss %", minval = 0 , step = 0.01 , inline = "SellSL", group = groupTrade)
+buyTPPer = input.float(defval = 1 , title = "Buy Take Progit %", minval = 0 , step = 0.01 , inline = "BuyTP", group = groupTrade)
+sellTPPer = input.float(defval = 1 , title = "Sell Take Progit %", minval = 0 , step = 0.01 , inline = "SellTP", group = groupTrade)
+
+ratioRR = input.float(1, title='R/R Ratio', step = 0.1, group=groupTrade)
+
+leverage = input.float(200, title='Leverage', step = 0.1, group=groupTrade)
+
+dd1 = input.bool(0, title='Sun',inline = "tradeDay", group=groupTrade)
+dd2 = input.bool(1, title='Mon', inline = "tradeDay", group=groupTrade)
+dd3 = input.bool(1, title='Tues', inline = "tradeDay", group=groupTrade)
+dd4 = input.bool(1, title='Wed', inline = "tradeDay", group=groupTrade)
+dd5 = input.bool(1, title='Thur', inline = "tradeDay", group=groupTrade)
+dd6 = input.bool(1, title='Fri', inline = "tradeDay", group=groupTrade)
+dd7 = input.bool(0, title='Sat', inline = "tradeDay", group=groupTrade)
+
+dayweek = dayofweek(time = time, timezone = 'America/New_York' )
+
+tradeDay := switch dayweek
+    1 => dd1
+    2 => dd2
+    3 => dd3
+    4 => dd4
+    5 => dd5
+    6 => dd6
+    7 => dd7
+    => false
+
+
+
+passADX = enableADX ? sig > lowestADX : true
+
+buyVFI = enableVFI ? vfi > 0 : true
+sellVFI = enableVFI ? vfi < 0 : true
+
+buyfilters = passADX and buyVFI and tradeDay
+sellfilters = passADX and sellVFI and tradeDay
+
+// you can set your own logic here
+
+buyCondition = buyfilters and strategy.position_size == 0 and buyBB
+sellCondition = sellfilters and strategy.position_size == 0 and sellBB
+
+if (strategy.position_size == 0)
+    entryPrice := 0.0
+    priceLimit := 0.0
+    priceStop := 0.0
+    time_now := 0
+    orderQty:=0
+// you can set your own logic here
+if(window())
+    if (buyCondition)
+
+        entryPrice := close
+        time_now := timenow
+        orderQty:=strategy.equity/entryPrice*leverage
+
+        priceStop := switch buySLMeth
+            "%" => entryPrice * (1 - buySLPer / 100)
+            "ATR" => srcLower - atr * atrMultiplierLower
+            "tick" => entryPrice - (syminfo.mintick * buySLPer)
+        priceStop := math.round_to_mintick(priceStop)
+        
+        priceLimit := switch buyTPMeth
+            "%" => entryPrice * (1 + buyTPPer / 100)
+            "ATR" => srcUpper + atr * atrMultiplierUpper
+            "tick" => entryPrice + (syminfo.mintick * buyTPPer)
+            "R/R" => entryPrice + (entryPrice - priceStop) * ratioRR 
+        priceLimit := math.round_to_mintick(priceLimit)
+        
+        strategy.entry('Buy', strategy.long, qty = orderQty, alert_message = "buy")
+        strategy.exit("Buy", limit=priceLimit, stop=priceStop, comment_profit="Buy_profit", comment_loss="Buy_loss", alert_message = "close")
+    if (sellCondition)
+
+        entryPrice := close
+        time_now := timenow
+        orderQty:=strategy.equity/entryPrice*leverage
+
+        priceStop := switch sellSLMeth
+            "%" => entryPrice * (1 + sellSLPer / 100)
+            "ATR" => srcUpper + atr * atrMultiplierUpper
+            "tick" => entryPrice + (syminfo.mintick * sellSLPer)
+        priceStop := math.round_to_mintick(priceStop)
+
+        priceLimit := switch sellTPMeth
+            "%" => entryPrice * (1 - sellTPPer / 100)
+            "ATR" => srcLower - atr * atrMultiplierLower
+            "tick" => entryPrice - (syminfo.mintick * sellTPPer)
+            "R/R" => entryPrice - (priceStop - entryPrice) * ratioRR
+        priceLimit := math.round_to_mintick(priceLimit)
+
+        strategy.entry('Sell', strategy.short, qty = orderQty, alert_message = "sell")
+        strategy.exit("Sell",limit=priceLimit, stop=priceStop, comment_profit="Sell_profit", comment_loss="Sell_loss", alert_message = "close")
+        
+
+// # ========================================================================= #
+// #                   |   Print  |
+// # ========================================================================= #
+
+plotchar(entryPrice, "entryPrice", "", location = location.top)
+plotchar(priceLimit, "priceLimit", "", location = location.top)
+plotchar(priceStop, "priceStop", "", location = location.top)
+plotchar(time_now, "timenow", "", location = location.top)
+
+plotchar(buyCondition, "buyCondition", "", location = location.top)
+plotchar(sellCondition, "sellCondition", "", location = location.top)
+
+
+plotchar(buyBB, "buyBB", "", location = location.top)
+plotchar(sellBB, "sellBB", "", location = location.top)
+plotchar(passADX, "passADX", "", location = location.top)
+plotchar(buyVFI, "buyVFI", "", location = location.top)
+plotchar(sellVFI, "sellVFI", "", location = location.top)
+plotchar(buyfilters, "buyfilters", "", location = location.top)
+plotchar(sellfilters, "sellfilters", "", location = location.top)
+plotchar(tradeDay, "tradeDay", "", location = location.top)
+plotchar(dayofweek(time = time, timezone = 'America/New_York' ) , "dayofweek(time = dayofweek, timezone = 'America/New_York' ) ", "", location = location.top)
+plotchar(syminfo.mintick, "mintick", "", location = location.top)
