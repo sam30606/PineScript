@@ -145,13 +145,11 @@ basis = ta.sma(source, length)
 dev = mult * ta.stdev(source, length)
 upper = basis + dev
 lower = basis - dev
-buyEntry = ta.crossover(source, lower)
-sellEntry = ta.crossunder(source, upper)
 
 
 
-buyBB = ta.crossover(source, lower)
-sellBB = ta.crossunder(source, upper)
+buyBB = ta.crossover(source, upper)
+sellBB = ta.crossunder(source, lower)
 // # ========================================================================= #
 // #                   |   BB  |
 // # ========================================================================= #
@@ -189,6 +187,10 @@ sellTPPer = input.float(defval = 0.01 , title = "Sell Take Progit %", minval = 0
 ratioRR = input.float(3, title='R/R Ratio', step = 0.1, group=groupTrade)
 
 leverage = input.float(200, title='Leverage', step = 0.1, group=groupTrade)
+orderPerc = input.float(10, title='Order%', step = 0.1, group=groupTrade)/100
+
+buyTrade = input.bool(defval = true, title = "BuyTrade",  group = groupTrade) 
+sellTrade = input.bool(defval = true, title = "SellTrade",  group = groupTrade) 
 
 dd1 = input.bool(0, title='Sun',inline = "tradeDay", group=groupTrade)
 dd2 = input.bool(1, title='Mon', inline = "tradeDay", group=groupTrade)
@@ -222,8 +224,8 @@ sellRSI = enableRSI ? rsi < 25  : true
 //buyRSI = enableRSI ? rsi > 75 ? rsi[1] > 75 : false : true
 //sellRSI = enableRSI ? rsi < 25 ? rsi[1] < 25 : false : true
 
-buyfilters = passADX and buyVFI and buyRSI and tradeDay
-sellfilters = passADX and sellVFI and sellRSI and tradeDay
+buyfilters = passADX and buyVFI and buyRSI and tradeDay and buyTrade
+sellfilters = passADX and sellVFI and sellRSI and tradeDay and sellTrade
 
 // you can set your own logic here
 
@@ -242,7 +244,7 @@ if(window())
 
         entryPrice := close
         time_now := timenow
-        orderQty:=strategy.equity/entryPrice*leverage
+        orderQty:=strategy.equity/entryPrice*leverage*orderPerc
 
         priceStop := switch buySLMeth
             "%" => entryPrice * (1 - buySLPer / 100)
@@ -263,7 +265,7 @@ if(window())
 
         entryPrice := close
         time_now := timenow
-        orderQty:=strategy.equity/entryPrice*leverage
+        orderQty:=strategy.equity/entryPrice*leverage*orderPerc
 
         priceStop := switch sellSLMeth
             "%" => entryPrice * (1 + sellSLPer / 100)
@@ -290,6 +292,7 @@ plotchar(entryPrice, "entryPrice", "", location = location.top)
 plotchar(priceLimit, "priceLimit", "", location = location.top)
 plotchar(priceStop, "priceStop", "", location = location.top)
 plotchar(leverage, "leverage", "", location = location.top)
+plotchar(orderPerc, "orderPerc", "", location = location.top)
 plotchar(time_now, "timenow", "", location = location.top)
 
 plotchar(buyCondition, "buyCondition", "", location = location.top)
